@@ -13,12 +13,22 @@ class SendScreen extends StatefulWidget {
     required this.onCheck,
     required this.isMerchant,
     this.balanceLabel,
+    this.availableBalance,
   });
 
   /// Called with (amount, counterpart). The caller runs the safety check.
   final Future<void> Function(double amount, String counterpart) onCheck;
   final bool isMerchant;
   final String? balanceLabel;
+
+  /// The real spendable balance, used to reject an amount you don't have
+  /// before the safety check even runs. This is a hard constraint, not a
+  /// risk judgement — KOPA advises on risk (obligations, spending pattern, an
+  /// unfamiliar recipient) and never blocks those, but sending money that
+  /// isn't there isn't a judgement call, the same way a bank refuses an
+  /// overdraft it never agreed to. `null` while the balance is still loading
+  /// skips this check rather than blocking on an unknown limit.
+  final double? availableBalance;
 
   @override
   State<SendScreen> createState() => _SendScreenState();
@@ -105,6 +115,10 @@ class _SendScreenState extends State<SendScreen> {
                   final value = double.tryParse(text);
                   if (value == null) return 'Enter a valid amount';
                   if (value <= 0) return 'Amount must be more than zero';
+                  final limit = widget.availableBalance;
+                  if (limit != null && value > limit) {
+                    return "You don't have that much in your wallet";
+                  }
                   return null;
                 },
               ),

@@ -39,7 +39,9 @@ from app.schemas import (
     SubmitSignatureRequest,
     TransactionResponse,
 )
+from app.services import demo_ledger
 from app.services.bmoni_client import BmoniClient, BmoniError
+from app.services.decision_service import DecisionService
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +81,24 @@ def create_transaction(
     """
     settings = get_settings()
 
+    # Hard solvency check, independent of the risk-based safety verdict.
+    # KOPA advises on risk (obligations, spending pattern, an unfamiliar
+    # recipient) and deliberately never blocks those — "Send anyway" always
+    # stays available. Sending money that is not there is not a judgement
+    # call, though; it is impossible, the same way a bank refuses an
+    # overdraft it never agreed to. This runs before ANY branch below, live
+    # or demo, so it can never be bypassed by either path.
+    user_for_balance = None if settings.kopa_demo_mode else db.get(User, user_id)
+    current_balance, _ = DecisionService(db=db, settings=settings).get_balance(
+        user_for_balance
+    )
+    if payload.amount > current_balance:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"You only have NGN {current_balance:.2f} available. "
+            "Enter an amount within your balance.",
+        )
+
     if settings.kopa_demo_mode:
         # Demo mode must not touch BMONI or the database at all — the same
         # reason /wallets/{id}/balance short-circuits before it. A deployment
@@ -87,9 +107,13 @@ def create_transaction(
         # what happened here before this existed: the demo-mode branch used to
         # run AFTER _require_wallet, so it never protected anything.
         #
-        # Nothing is persisted. bmoni_txn_ref stays absent and status is DEMO
-        # everywhere a real transaction would carry a BMONI reference, so a
-        # demo transfer can never be mistaken for a real one.
+        # Nothing is persisted to the database. bmoni_txn_ref stays absent and
+        # status is DEMO everywhere a real transaction would carry a BMONI
+        # reference, so a demo transfer can never be mistaken for a real one.
+        # The in-memory ledger is the one exception -- it exists purely so the
+        # demo balance visibly drops on the next fetch, the way a real send
+        # would.
+        demo_ledger.record_demo_send(payload.amount)
         return ProposalResponse(
             proposal_id=f"demo-{uuid.uuid4()}",
             status="DEMO",

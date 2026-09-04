@@ -31,7 +31,7 @@ from app.models import (
     Verdict as VerdictEnum,
     Wallet,
 )
-from app.services import ai_copilot, demo_data
+from app.services import ai_copilot, demo_data, demo_ledger
 from app.services.bmoni_client import BmoniClient, BmoniError
 from app.services.safety_engine import (
     HistoricalTransaction,
@@ -74,13 +74,13 @@ class DecisionService:
         computed against a clearly-labelled demo balance.
         """
         if self.demo_mode or user is None:
-            return demo_data.demo_balance(), True
+            return demo_data.demo_balance() - demo_ledger.demo_spent(), True
 
         try:
             balances = self._bmoni_client().get_balances(user.bmoni_user_ref)
         except BmoniError as exc:
             logger.warning("balance unavailable, using demo figure: %s", exc.message)
-            return demo_data.demo_balance(), True
+            return demo_data.demo_balance() - demo_ledger.demo_spent(), True
 
         for b in balances:
             if b.currency.upper() in {"NGN", "CNGN"} and not b.error:

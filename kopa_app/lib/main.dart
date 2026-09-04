@@ -111,6 +111,7 @@ class _KopaShellState extends State<KopaShell> {
           balanceLabel: _balance == null
               ? null
               : formatMoney(_balance!.amount.toStringAsFixed(2)),
+          availableBalance: _balance?.amount,
           onCheck: (amount, counterpart) =>
               _runSafetyCheck(amount, counterpart, isMerchant),
         ),

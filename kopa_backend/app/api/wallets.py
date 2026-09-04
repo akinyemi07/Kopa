@@ -30,6 +30,7 @@ from app.schemas import (
     WalletResponse,
 )
 from app.services.bmoni_client import BmoniClient, BmoniError
+from app.services import demo_ledger
 from app.services.demo_data import demo_balance
 
 logger = logging.getLogger(__name__)
@@ -225,7 +226,10 @@ def get_balance(user_id: str, db: Session = Depends(get_db)) -> BalanceResponse:
 
     if settings.kopa_demo_mode:
         return BalanceResponse(
-            currency="NGN", balance=demo_balance(), is_demo=True, as_of=now
+            currency="NGN",
+            balance=demo_balance() - demo_ledger.demo_spent(),
+            is_demo=True,
+            as_of=now,
         )
 
     user = db.get(User, user_id)

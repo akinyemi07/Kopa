@@ -39,7 +39,7 @@ class SuccessScreen extends StatelessWidget {
               Semantics(
                 liveRegion: true,
                 label: isDemo
-                    ? 'Demo transfer recorded. No real money moved.'
+                    ? 'Transfer successful. Demo mode — no real money moved.'
                     : 'Transfer signed and sent.',
                 child: Column(
                   children: [
@@ -52,13 +52,13 @@ class SuccessScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 20),
                     Text(
-                      isDemo ? 'Demo transfer recorded' : 'Sent',
+                      'Transfer successful',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.headlineSmall,
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      '$amount to $counterpart',
+                      '$amount sent to $counterpart',
                       textAlign: TextAlign.center,
                       style: Theme.of(context)
                           .textTheme
