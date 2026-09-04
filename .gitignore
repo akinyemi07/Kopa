@@ -1,0 +1,38 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Flutter / Dart
+kopa_app/.dart_tool/
+kopa_app/build/
+kopa_app/.flutter-plugins
+kopa_app/.flutter-plugins-dependencies
+kopa_app/android/.gradle/
+kopa_app/android/local.properties
+kopa_app/ios/Pods/
+kopa_app/ios/.symlinks/
+*.iml
+
+# Spike / local artefacts
+.spike_state.json
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
