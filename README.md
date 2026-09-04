@@ -118,7 +118,7 @@ A model cannot hallucinate a balance it was never asked to calculate. See
 |---|---|
 | Wallet private key | Android Keystore, on device. Never on any server. |
 | BMONI partner key | `kopa_backend` environment only. Never in the app. |
-| Anthropic key | `kopa_backend` environment only. |
+| AI provider key (Anthropic or Groq) | `kopa_backend` environment only. |
 | Financial calculation | `app/services/safety_engine.py` — pure, deterministic |
 | AI | `app/services/ai_copilot.py` — narration only |
 | User confirmation | Flutter, after the safety screen, gated by PIN |
@@ -220,11 +220,17 @@ written during the official build period. The two documents at the repository
 root (`KOPA_BUILD_GUIDE.md`, `Hackathon-Competition-Requirements.md`) are the
 brief, authored before the build.
 
-**AI models:** Anthropic Claude (`claude-sonnet-5`) via the official
-`anthropic` Python SDK, used solely to narrate the safety engine's output.
-Claude Code was used as a development assistant.
+**AI models:** the narration layer is provider-pluggable, since swapping the
+model cannot change a verdict — only the wording under the numbers. Two are
+supported: Anthropic Claude (`claude-sonnet-5`, official `anthropic` Python
+SDK) and Groq's free tier (`openai/gpt-oss-120b`, an open-weights model, over
+Groq's OpenAI-compatible REST endpoint). `KOPA_AI_PROVIDER` selects one;
+`auto` uses whichever key is present. See
+[responsible-ai.md](docs/responsible-ai.md#choice-of-provider). Claude Code
+was used as a development assistant.
 
-**External APIs:** BMONI Embedded REST API (sandbox); Anthropic Messages API.
+**External APIs:** BMONI Embedded REST API (sandbox); Anthropic Messages API
+and/or the Groq API, depending on which provider is configured.
 
 **BMONI SDKs:** `bmoni_embedded_sdk` 0.0.2, `bkey_uikit` 0.0.1,
 `bmoni_embedded_wallets_cards` 0.0.1.

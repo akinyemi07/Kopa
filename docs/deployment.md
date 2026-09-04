@@ -38,8 +38,14 @@ not hit a cold start.
    |---|---|---|
    | `KOPA_DEMO_MODE` | `true` | No database required |
    | `KOPA_ENV` | `production` | Disables dev CORS origins |
-   | `ANTHROPIC_API_KEY` | *(secret)* | Optional — without it, deterministic explanations |
+   | `KOPA_AI_PROVIDER` | `groq` | Recommended — free tier, no billing risk |
+   | `GROQ_API_KEY` | *(secret)* | From console.groq.com. See below |
+   | `ANTHROPIC_API_KEY` | *(secret)* | Alternative to Groq; paid, no free tier |
    | `BMONI_API_KEY` | *(secret)* | Optional in demo mode |
+
+   Without any AI key, KOPA serves its deterministic explanation template —
+   the verdict and every figure are identical either way. See
+   [responsible-ai.md](responsible-ai.md#choice-of-provider).
 
    Do not set `PORT`; Render injects it and the container reads it.
 

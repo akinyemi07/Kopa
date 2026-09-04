@@ -22,10 +22,15 @@ kopa_app/build/
 kopa_app/.flutter-plugins
 kopa_app/.flutter-plugins-dependencies
 kopa_app/android/.gradle/
+kopa_app/android/build/
 kopa_app/android/local.properties
 kopa_app/ios/Pods/
 kopa_app/ios/.symlinks/
 *.iml
+
+# VS Code Local History extension — snapshots every save, including .env.
+# A past commit leaked a real API key this way; never let it happen again.
+.history/
 
 # Spike / local artefacts
 .spike_state.json
