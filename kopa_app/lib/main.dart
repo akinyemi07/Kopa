@@ -1,122 +1,265 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// KOPA — financial safety analysis before you sign.
+//
+// The journey this app exists to deliver:
+//
+//   home -> amount + recipient -> SAFETY CHECK -> decide -> PIN -> sign -> done
+//
+// The safety check is not optional and not skippable. Every path to signing
+// goes through it.
+
+import 'dart:async';
+
+import 'package:bkey_uikit/bkey_uikit.dart';
 import 'package:flutter/material.dart';
 
+import 'core/api_client.dart';
+import 'models/decision.dart';
+import 'screens/home_screen.dart';
+import 'screens/pin_screen.dart';
+import 'screens/safety_result_screen.dart';
+import 'screens/send_screen.dart';
+import 'screens/success_screen.dart';
+import 'services/wallet_service.dart';
+import 'theme/verdict_style.dart';
+
 void main() {
-  runApp(const MyApp());
+  WidgetsFlutterBinding.ensureInitialized();
+  // Configure the BMONI SDK once, before the first signer call.
+  WalletService.initialize();
+  runApp(const KopaApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class KopaApp extends StatelessWidget {
+  const KopaApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      title: 'KOPA',
+      debugShowCheckedModeBanner: false,
+      theme: BMoniTheme.darkTheme(),
+      home: const KopaShell(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+class KopaShell extends StatefulWidget {
+  const KopaShell({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<KopaShell> createState() => _KopaShellState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _KopaShellState extends State<KopaShell> {
+  final _api = KopaApi();
+  final _wallet = WalletService();
 
-  void _incrementCounter() {
+  /// In demo mode the backend serves seeded data for any user id. A real
+  /// deployment would persist the id returned by POST /users.
+  static const String _demoUserId = '11111111-1111-1111-1111-111111111111';
+
+  Balance? _balance;
+  String? _walletAddress;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _bootstrap();
+  }
+
+  @override
+  void dispose() {
+    _api.dispose();
+    super.dispose();
+  }
+
+  Future<void> _bootstrap() async {
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      _loading = true;
+      _error = null;
     });
+    try {
+      // The device address is read from the SDK, never from the backend.
+      final address = await _wallet.walletAddress();
+      final balance = await _api.getBalance(_demoUserId);
+      if (!mounted) return;
+      setState(() {
+        _walletAddress = address;
+        _balance = balance;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  // -------------------------------------------------------------- the journey
+
+  Future<void> _startSend({required bool isMerchant}) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => SendScreen(
+          isMerchant: isMerchant,
+          balanceLabel: _balance == null
+              ? null
+              : formatMoney(_balance!.amount.toStringAsFixed(2)),
+          onCheck: (amount, counterpart) =>
+              _runSafetyCheck(amount, counterpart, isMerchant),
+        ),
+      ),
+    );
+    // The balance may have moved while we were away.
+    unawaited(_bootstrap());
+  }
+
+  /// Step 1 of every send: ask KOPA before doing anything.
+  Future<void> _runSafetyCheck(
+    double amount,
+    String counterpart,
+    bool isMerchant,
+  ) async {
+    final decision = await _api.evaluate(
+      userId: _demoUserId,
+      amount: amount,
+      counterpart: counterpart,
+      type: isMerchant ? 'merchant' : 'personal',
+    );
+
+    if (!mounted) return;
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (routeContext) => SafetyResultScreen(
+          decision: decision,
+          counterpart: counterpart,
+          onCancel: () => Navigator.of(routeContext).pop(),
+          onProceed: () => _confirmAndSign(
+            routeContext,
+            amount: amount,
+            counterpart: counterpart,
+            decision: decision,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Step 2: the user has seen the consequence and chosen to continue.
+  Future<void> _confirmAndSign(
+    BuildContext routeContext, {
+    required double amount,
+    required String counterpart,
+    required Decision decision,
+  }) async {
+    final hasPin = await _wallet.hasPin();
+    // Guard the context we are actually about to use, not the State's.
+    if (!routeContext.mounted) return;
+
+    if (!hasPin) {
+      _showMessage(
+        'Set up a wallet PIN in Settings before sending money.',
+      );
+      return;
+    }
+
+    await Navigator.of(routeContext).push<void>(
+      MaterialPageRoute(
+        builder: (pinContext) => PinScreen(
+          title: 'Send ${formatMoney(decision.justification.proposedAmount)}',
+          subtitle:
+              'to $counterpart. Enter your PIN to sign this transfer on your '
+              'device.',
+          confirmLabel: 'Sign and send',
+          onSubmit: (pin) => _signAndSubmit(
+            pinContext,
+            amount: amount,
+            counterpart: counterpart,
+            pin: pin,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Step 3: propose via the backend, sign on-device, submit the signature.
+  ///
+  /// The private key never leaves this device, and the backend never sees the
+  /// PIN — it only ever receives the resulting signature hex.
+  Future<void> _signAndSubmit(
+    BuildContext pinContext, {
+    required double amount,
+    required String counterpart,
+    required String pin,
+  }) async {
+    final proposal = await _api.createTransaction(
+      userId: _demoUserId,
+      amount: amount,
+      counterpart: counterpart,
+      description: 'Sent with KOPA',
+    );
+
+    String? reference = proposal.proposalId;
+
+    if (!proposal.isDemo) {
+      final hash = proposal.hashToSign;
+      if (hash == null) {
+        throw Exception(
+          'BMONI has not released the signing payload yet. Please try again '
+          'in a moment.',
+        );
+      }
+      // signProposal -> signTransactionHash: RAW digest, no EIP-191 prefix.
+      final signature = await _wallet.signProposal(hash, pin);
+      await _api.submitSignature(
+        userId: _demoUserId,
+        proposalId: proposal.proposalId,
+        signature: signature,
+      );
+    } else {
+      // In demo mode we still require the PIN, so the gesture the judge sees
+      // is the real one — but no BMONI transaction is created or implied.
+      final ok = await _wallet.hasPin();
+      if (!ok) throw Exception('No PIN is set on this device.');
+    }
+
+    if (!pinContext.mounted) return;
+
+    Navigator.of(pinContext).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => SuccessScreen(
+          amount: formatMoney(amount.toStringAsFixed(2)),
+          counterpart: counterpart,
+          reference: reference,
+          isDemo: proposal.isDemo,
+          onDone: () => Navigator.of(context).popUntil((r) => r.isFirst),
+        ),
+      ),
+    );
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ),
+    return HomeScreen(
+      balance: _balance,
+      walletAddress: _walletAddress,
+      isLoading: _loading,
+      error: _error,
+      onRefresh: _bootstrap,
+      onSend: () => _startSend(isMerchant: false),
+      onPayMerchant: () => _startSend(isMerchant: true),
     );
   }
 }
