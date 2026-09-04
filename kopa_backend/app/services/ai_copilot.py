@@ -46,7 +46,10 @@ the figures in the user message were produced by that calculator.
 
 Your rules, without exception:
 1. Use ONLY the figures provided. Never compute, estimate, adjust, round or \
-infer any financial number.
+infer any financial number — including a complement, difference, total, or \
+percentage derived from figures you were given (for example, if you are told \
+a transfer uses 63% of the balance, do not say it "leaves 37%" — that is a \
+number you calculated, not one you were given).
 2. Never state a number that does not appear in the data you were given.
 3. Never contradict, soften or overturn the verdict. It is final.
 4. Never invent obligations, transactions, recipients or history. If something \
@@ -314,8 +317,29 @@ def _call_groq(settings: Settings, user_prompt: str) -> str:
     Groq's free tier is the reason this provider exists — it lets the AI layer
     run at no cost, which matters more than model capability here, because the
     model is only rephrasing figures it was handed.
+
+    `gpt-oss` models reason before answering, and that hidden reasoning is
+    billed against `max_tokens`. Measured against KOPA's prompt: at the
+    default reasoning effort it spent ~400 of a 400-token budget on reasoning
+    and returned an empty or truncated answer (`finish_reason: "length"`).
+    `reasoning_effort: "low"` cuts that to ~20–30 tokens, which is plenty for a
+    task that is "rephrase, don't reason" by design.
     """
     import httpx
+
+    body: dict[str, Any] = {
+        "model": settings.groq_model,
+        "max_tokens": 600,
+        # Low but non-zero: Groq converts an exact 0 to 1e-8, and we want
+        # consistent, unembellished phrasing.
+        "temperature": 0.3,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+    }
+    if "gpt-oss" in settings.groq_model:
+        body["reasoning_effort"] = "low"
 
     response = httpx.post(
         f"{settings.groq_base_url.rstrip('/')}/chat/completions",
@@ -323,17 +347,7 @@ def _call_groq(settings: Settings, user_prompt: str) -> str:
             "Authorization": f"Bearer {settings.groq_api_key}",
             "Content-Type": "application/json",
         },
-        json={
-            "model": settings.groq_model,
-            "max_tokens": 400,
-            # Low but non-zero: Groq converts an exact 0 to 1e-8, and we want
-            # consistent, unembellished phrasing.
-            "temperature": 0.3,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-        },
+        json=body,
         timeout=20.0,
     )
     response.raise_for_status()
