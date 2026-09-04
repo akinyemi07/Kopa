@@ -17,6 +17,7 @@
 // address, and BMONI rejects it with an error that does not say why.
 
 import 'package:bmoni_embedded_sdk/bmoni_embedded_sdk.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 /// A wallet or signing failure, already translated for a human.
 class WalletException implements Exception {
@@ -40,16 +41,39 @@ class WalletService {
   /// interaction is already familiar to the target user.
   static const int pinLength = 6;
 
-  /// Configure the SDK. Call once, before runApp.
+  /// A recognisably fake address, used only for the web demo path below.
+  /// Never submitted to BMONI — demo-mode transactions never reach BMONI at
+  /// all — and never mistaken for a real wallet: it doesn't checksum as one.
+  static const String _webDemoAddress =
+      '0x0000000000000000000000000000000000DEB0';
+
+  // bmoni_embedded_sdk is documented for Android and iOS only — there is no
+  // web platform implementation. On web, even PIN storage (pure Dart, no
+  // platform channel) fails: the SDK hashes the PIN via `compute()`, which
+  // spawns a Dart isolate, and browsers have no isolate support
+  // ("Unsupported operation: new RawReceivePort"). These two fields let the
+  // web build walk through the same screens as a real device without ever
+  // calling into the native SDK — kept in memory only, and never touched
+  // when `kIsWeb` is false, so the real Android path below is unaffected.
+  bool _webWalletCreated = false;
+  bool _webPinSet = false;
+
+  /// Configure the SDK. Call once, before runApp. A no-op on web, since there
+  /// is nothing to configure on a platform the SDK does not support.
   static void initialize() {
+    if (kIsWeb) return;
     BmoniEmbeddedSdk.initialize(pinLength: pinLength, requirePin: true);
   }
 
-  Future<bool> hasWallet() => BmoniEmbeddedSdk.hasWallet();
+  Future<bool> hasWallet() =>
+      kIsWeb ? Future.value(_webWalletCreated) : BmoniEmbeddedSdk.hasWallet();
 
-  Future<String?> walletAddress() => BmoniEmbeddedSdk.walletAddress();
+  Future<String?> walletAddress() => kIsWeb
+      ? Future.value(_webWalletCreated ? _webDemoAddress : null)
+      : BmoniEmbeddedSdk.walletAddress();
 
-  Future<bool> hasPin() => BmoniEmbeddedSdk.hasPin();
+  Future<bool> hasPin() =>
+      kIsWeb ? Future.value(_webPinSet) : BmoniEmbeddedSdk.hasPin();
 
   /// Generate the device keypair inside secure hardware.
   ///
@@ -57,6 +81,10 @@ class WalletService {
   /// device. The private key is generated, encrypted with a platform-managed
   /// wrapping key, and zeroized in RAM — KOPA never sees it.
   Future<String> createWallet() async {
+    if (kIsWeb) {
+      _webWalletCreated = true;
+      return _webDemoAddress;
+    }
     try {
       return await BmoniEmbeddedSdk.initWallet();
     } on BmoniSignerException catch (e) {
@@ -70,6 +98,16 @@ class WalletService {
 
   /// Set the signing PIN. Stored only as a PBKDF2-HMAC-SHA256 digest.
   Future<void> setPin(String pin) async {
+    if (kIsWeb) {
+      if (pin.length != pinLength) {
+        throw WalletException(
+          'Your PIN must be exactly $pinLength digits.',
+          isPinError: true,
+        );
+      }
+      _webPinSet = true;
+      return;
+    }
     try {
       await BmoniEmbeddedSdk.setPin(pin);
     } on BmoniSignerException catch (e) {
@@ -78,7 +116,16 @@ class WalletService {
   }
 
   /// Sign the owner-proof challenge — EIP-191 prefixed, over the message TEXT.
+  ///
+  /// Never reachable on web in demo mode; guarded anyway so a future caller
+  /// gets a clear message instead of an isolate crash.
   Future<String> signOwnerProof(String message, String pin) async {
+    if (kIsWeb) {
+      throw WalletException(
+        'Signing needs the Android app — a browser has no secure element '
+        'to hold the key.',
+      );
+    }
     try {
       return await BmoniEmbeddedSdk.signMessage(message, pin: pin);
     } on BmoniSignerException catch (e) {
@@ -87,7 +134,15 @@ class WalletService {
   }
 
   /// Sign a transfer proposal — RAW 32-byte digest, no prefix.
+  ///
+  /// Never reachable on web in demo mode; guarded anyway for the same reason.
   Future<String> signProposal(String hashToSign, String pin) async {
+    if (kIsWeb) {
+      throw WalletException(
+        'Signing needs the Android app — a browser has no secure element '
+        'to hold the key.',
+      );
+    }
     try {
       return await BmoniEmbeddedSdk.signTransactionHash(hashToSign, pin: pin);
     } on BmoniSignerException catch (e) {
