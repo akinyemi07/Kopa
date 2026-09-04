@@ -159,15 +159,31 @@ class _KopaShellState extends State<KopaShell> {
     required String counterpart,
     required Decision decision,
   }) async {
-    final hasPin = await _wallet.hasPin();
+    var hasPin = await _wallet.hasPin();
     // Guard the context we are actually about to use, not the State's.
     if (!routeContext.mounted) return;
 
+    // First-time users set their signing PIN here rather than being sent away
+    // to a settings screen and losing the transfer they were part-way through.
     if (!hasPin) {
-      _showMessage(
-        'Set up a wallet PIN in Settings before sending money.',
+      final created = await Navigator.of(routeContext).push<bool>(
+        MaterialPageRoute(
+          builder: (setupContext) => PinScreen(
+            title: 'Create your signing PIN',
+            subtitle:
+                'This ${WalletService.pinLength}-digit PIN protects the key '
+                'held on this device. KOPA never sees it, and it cannot be '
+                'recovered — choose something you will remember.',
+            confirmLabel: 'Set PIN',
+            onSubmit: (pin) async {
+              await _wallet.setPin(pin);
+              if (setupContext.mounted) Navigator.of(setupContext).pop(true);
+            },
+          ),
+        ),
       );
-      return;
+      hasPin = created ?? false;
+      if (!hasPin || !routeContext.mounted) return;
     }
 
     await Navigator.of(routeContext).push<void>(
@@ -243,11 +259,6 @@ class _KopaShellState extends State<KopaShell> {
         ),
       ),
     );
-  }
-
-  void _showMessage(String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override

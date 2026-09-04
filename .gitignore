@@ -36,3 +36,6 @@ kopa_app/ios/.symlinks/
 Thumbs.db
 .idea/
 .vscode/
+
+# Staged Flutter web bundle (built into the image; see Dockerfile)
+kopa_backend/web/

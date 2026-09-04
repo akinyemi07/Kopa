@@ -1,0 +1,31 @@
+# Never let a secret reach the build context.
+.env
+.env.*
+!.env.example
+.spike_state.json
+
+# Build artefacts — rebuilt inside the image.
+kopa_app/build/
+kopa_app/.dart_tool/
+kopa_app/android/
+kopa_app/ios/
+kopa_backend/web/
+
+# Local tooling.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# VCS and docs — not needed at runtime.
+.git/
+.gitignore
+docs/
+*.md
+!README.md
+
+.idea/
+.vscode/

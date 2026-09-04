@@ -51,6 +51,8 @@ class HomeScreen extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
             children: [
+              const _SandboxBanner(),
+              const SizedBox(height: 16),
               _BalanceCard(
                 balance: balance,
                 walletAddress: walletAddress,
@@ -175,6 +177,50 @@ class _BalanceCard extends StatelessWidget {
   static String _shorten(String address) => address.length <= 14
       ? address
       : '${address.substring(0, 8)}…${address.substring(address.length - 6)}';
+}
+
+/// Says what this build is, before the user assumes otherwise.
+///
+/// A deployed web build cannot sign: `bmoni_embedded_sdk` keeps the key in the
+/// Android Keystore / iOS Secure Enclave, neither of which exists in a
+/// browser. Rather than let a visitor infer they are looking at a live wallet,
+/// the app states the limitation on the first screen.
+class _SandboxBanner extends StatelessWidget {
+  const _SandboxBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Sandbox demonstration. No real money is involved. On-device '
+          'signing requires the Android app.',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: BMoniColors.grey900,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: BMoniColors.grey700),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.info_outline, size: 18, color: BMoniColors.grey400),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Sandbox demonstration — no real money. Figures are synthetic. '
+                'On-device signing needs the Android app, since a browser has '
+                'no secure element.',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: BMoniColors.grey300, height: 1.4),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _DemoChip extends StatelessWidget {

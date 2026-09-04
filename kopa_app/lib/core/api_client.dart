@@ -13,6 +13,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
 import '../models/decision.dart';
@@ -40,13 +41,22 @@ class KopaApi {
       : baseUrl = baseUrl ?? defaultBaseUrl,
         _client = client ?? http.Client();
 
-  /// 10.0.2.2 is the Android emulator's route to the host machine's
-  /// localhost. Overridable at build time:
-  ///   flutter run --dart-define=KOPA_API_BASE_URL=http://192.168.1.5:8000
-  static const String defaultBaseUrl = String.fromEnvironment(
-    'KOPA_API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:8000',
-  );
+  /// Where the KOPA backend lives.
+  ///
+  /// Resolution order:
+  ///   1. `--dart-define=KOPA_API_BASE_URL=...`, if provided
+  ///   2. On web: the origin serving this page. The deployed build is served
+  ///      as static files by the same FastAPI process that exposes the API, so
+  ///      same-origin means no CORS configuration to get wrong.
+  ///   3. On Android: 10.0.2.2, the emulator's route to the host's localhost.
+  ///
+  /// This is a URL, not a secret. The app holds no credentials.
+  static String get defaultBaseUrl {
+    const configured = String.fromEnvironment('KOPA_API_BASE_URL');
+    if (configured.isNotEmpty) return configured;
+    if (kIsWeb) return Uri.base.origin;
+    return 'http://10.0.2.2:8000';
+  }
 
   final String baseUrl;
   final http.Client _client;
