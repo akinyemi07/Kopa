@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 
 import '../models/decision.dart';
 import '../theme/verdict_style.dart';
+import '../widgets/brand_mark.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({
@@ -36,7 +37,7 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('KOPA'),
+        title: const KopaBrandMark(),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -51,6 +52,8 @@ class HomeScreen extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
             children: [
+              const _HeroBanner(),
+              const SizedBox(height: 16),
               const _SandboxBanner(),
               const SizedBox(height: 16),
               _BalanceCard(
@@ -177,6 +180,37 @@ class _BalanceCard extends StatelessWidget {
   static String _shorten(String address) => address.length <= 14
       ? address
       : '${address.substring(0, 8)}…${address.substring(address.length - 6)}';
+}
+
+/// A quiet visual anchor at the top of the screen — a shield guarding a
+/// wallet, in the app's own dark plum/magenta palette — so the first thing a
+/// user sees is a picture of what KOPA does, not a wall of text.
+///
+/// The source PNG is a tall phone-shaped composition; only its top third
+/// holds the illustration itself, so it's cropped to that band with
+/// `BoxFit.cover` + `Alignment.topCenter` rather than shown in full, which
+/// would leave a lot of empty dark space beneath it.
+class _HeroBanner extends StatelessWidget {
+  const _HeroBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: SizedBox(
+        height: 220,
+        width: double.infinity,
+        child: Image.asset(
+          'assets/images/hero_shield_wallet.png',
+          fit: BoxFit.cover,
+          alignment: const Alignment(0, -0.55),
+          // The illustration is decorative — the balance card right below it
+          // already carries the real, accessible information.
+          excludeFromSemantics: true,
+        ),
+      ),
+    );
+  }
 }
 
 /// Says what this build is, before the user assumes otherwise.

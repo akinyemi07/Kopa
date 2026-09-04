@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import time
+import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -77,26 +78,26 @@ def create_transaction(
     hash the device must sign for the transfer to execute.
     """
     settings = get_settings()
-    user, wallet = _require_wallet(db, user_id)
 
     if settings.kopa_demo_mode:
-        # A demo transaction is recorded with no bmoni_txn_ref and a DEMO status,
-        # so it can never be mistaken for a real BMONI transfer, in the UI or in
-        # the database.
-        row = Transaction(
-            wallet_id=wallet.id,
-            bmoni_txn_ref=None,
-            amount=payload.amount,
-            direction=TransactionDirection.OUTBOUND,
-            counterpart=payload.counterpart,
-            status=TransactionStatus.DEMO,
-            description=payload.description,
-        )
-        db.add(row)
-        db.commit()
+        # Demo mode must not touch BMONI or the database at all — the same
+        # reason /wallets/{id}/balance short-circuits before it. A deployment
+        # with no DATABASE_URL configured (the public demo link) would 500 on
+        # _require_wallet()'s db.get(User, ...) otherwise, which is exactly
+        # what happened here before this existed: the demo-mode branch used to
+        # run AFTER _require_wallet, so it never protected anything.
+        #
+        # Nothing is persisted. bmoni_txn_ref stays absent and status is DEMO
+        # everywhere a real transaction would carry a BMONI reference, so a
+        # demo transfer can never be mistaken for a real one.
         return ProposalResponse(
-            proposal_id=f"demo-{row.id}", status="DEMO", hash_to_sign=None, is_demo=True
+            proposal_id=f"demo-{uuid.uuid4()}",
+            status="DEMO",
+            hash_to_sign=None,
+            is_demo=True,
         )
+
+    user, wallet = _require_wallet(db, user_id)
 
     if not payload.to_address:
         raise HTTPException(

@@ -61,7 +61,18 @@ def safe_justification() -> dict:
 
 
 def ai_settings(**kw) -> Settings:
-    return Settings(anthropic_api_key="test-key", kopa_ai_model="claude-sonnet-5", **kw)
+    # _env_file=None is load-bearing: without it, pydantic-settings still
+    # reads the developer's real kopa_backend/.env underneath these explicit
+    # kwargs, so a real GROQ_API_KEY on disk turns a "no provider configured"
+    # test into a live network call. Explicit kwargs here are the only
+    # config these tests should ever see.
+    return Settings(
+        _env_file=None,
+        anthropic_api_key="test-key",
+        groq_api_key="",
+        kopa_ai_model="claude-sonnet-5",
+        **kw,
+    )
 
 
 class FakeClient:
@@ -122,7 +133,10 @@ def test_prompt_flags_a_first_time_recipient(safe_justification):
 # --------------------------------------------------------------------------
 
 def test_missing_api_key_falls_back_rather_than_failing(unsafe_justification):
-    result = explain(unsafe_justification, Settings(anthropic_api_key=""))
+    result = explain(
+        unsafe_justification,
+        Settings(_env_file=None, anthropic_api_key="", groq_api_key=""),
+    )
     assert result.is_fallback is True
     assert result.failure_reason == "ai_not_configured"
     assert unsafe_justification["resulting_balance"] in result.text
