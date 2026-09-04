@@ -27,9 +27,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN git clone --depth 1 -b stable https://github.com/flutter/flutter.git /flutter
 ENV PATH="/flutter/bin:${PATH}"
 
-# Pre-cache the tool and pull the web artifacts once, so pub get and the
-# build below don't pay for it again.
-RUN flutter precache --web
+# Render's build sandbox rejects the chown() extracted Flutter artifact
+# tarballs ask for ("Cannot change ownership ... Invalid argument"). This
+# broke an earlier `flutter precache --web` step, which pulled in the Gradle
+# Wrapper artifact regardless of the --web flag even though nothing
+# Android-related is built here — removed below rather than worked around,
+# since it was never required. TAR_OPTIONS is kept as a safety net for any
+# other artifact `pub get` / `build web` extract internally: it tells every
+# `tar` call, including ones Flutter's own tooling runs, to stop trying to
+# preserve the archived owner, which this sandbox can't honour anyway since
+# it runs as a single UID with no privilege to reassign one.
+ENV TAR_OPTIONS="--no-same-owner"
 
 WORKDIR /build
 COPY kopa_app/pubspec.yaml kopa_app/pubspec.lock ./
