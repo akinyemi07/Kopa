@@ -23,9 +23,11 @@ Three guarantees this module enforces in code, not just in the prompt:
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 from app.core.config import Settings, get_settings
@@ -196,6 +198,54 @@ def fallback_explanation(justification: dict[str, Any]) -> str:
     return " ".join(parts)
 
 
+_NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
+
+
+def _numbers_in(text: str) -> set[Decimal]:
+    """Every number appearing in a string, normalised for comparison.
+
+    Thousands separators are stripped so `25,000` and `25000.00` compare equal.
+    """
+    found: set[Decimal] = set()
+    for raw in _NUMBER_RE.findall(text):
+        try:
+            found.add(Decimal(raw.replace(",", "")))
+        except InvalidOperation:
+            continue
+    return found
+
+
+def _permitted_numbers(justification: dict[str, Any]) -> set[Decimal]:
+    """The only figures the model is allowed to state.
+
+    Derived from the engine's own output, serialised. Because dates are carried
+    as ISO strings, this naturally permits their components too — a model
+    writing "due on the 10th" for a due date of 2026-09-10 is quoting supplied
+    data, not inventing a figure.
+    """
+    permitted = _numbers_in(json.dumps(justification))
+    # Rounded presentations of a permitted figure are still that figure:
+    # 63.16% may legitimately be written as 63.2% or 63%.
+    for value in list(permitted):
+        permitted.add(value.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+        permitted.add(value.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    return permitted
+
+
+def _find_invented_numbers(
+    text: str, justification: dict[str, Any]
+) -> list[Decimal]:
+    """Numbers in the response that do not trace back to the engine's output.
+
+    This is the guard that matters most when the narration runs on a smaller
+    open model: instruction-following degrades before fluency does, so a model
+    that sounds fine may still slip in a figure nobody computed. Rather than
+    trusting the prompt, we check.
+    """
+    permitted = _permitted_numbers(justification)
+    return sorted(n for n in _numbers_in(text) if n not in permitted)
+
+
 def _validate(text: str, justification: dict[str, Any]) -> tuple[bool, str | None]:
     """Sanity-check the model's output before it is shown to anyone.
 
@@ -225,7 +275,69 @@ def _validate(text: str, justification: dict[str, Any]) -> tuple[bool, str | Non
         if phrase in lowered:
             return False, f"inappropriate guarantee language: {phrase!r}"
 
+    # The load-bearing check: no figure may appear that the engine did not
+    # produce. A hallucinated balance is the specific failure that would make
+    # KOPA dangerous rather than merely wrong.
+    invented = _find_invented_numbers(stripped, justification)
+    if invented:
+        return False, f"invented numbers not produced by the engine: {invented}"
+
     return True, None
+
+
+def _call_anthropic(settings: Settings, user_prompt: str, client: Any) -> str:
+    """Anthropic Messages API, via the official SDK."""
+    if client is None:
+        from anthropic import Anthropic
+
+        client = Anthropic(api_key=settings.anthropic_api_key, timeout=20.0)
+
+    response = client.messages.create(
+        model=settings.kopa_ai_model,
+        max_tokens=400,
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": user_prompt}],
+    )
+    return "".join(
+        block.text
+        for block in response.content
+        if getattr(block, "type", None) == "text"
+    ).strip()
+
+
+def _call_groq(settings: Settings, user_prompt: str) -> str:
+    """Groq's OpenAI-compatible chat-completions endpoint.
+
+    Called over plain HTTP rather than pulling in the OpenAI SDK: the request
+    is a single POST, and KOPA already depends on httpx for the BMONI client.
+
+    Groq's free tier is the reason this provider exists — it lets the AI layer
+    run at no cost, which matters more than model capability here, because the
+    model is only rephrasing figures it was handed.
+    """
+    import httpx
+
+    response = httpx.post(
+        f"{settings.groq_base_url.rstrip('/')}/chat/completions",
+        headers={
+            "Authorization": f"Bearer {settings.groq_api_key}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": settings.groq_model,
+            "max_tokens": 400,
+            # Low but non-zero: Groq converts an exact 0 to 1e-8, and we want
+            # consistent, unembellished phrasing.
+            "temperature": 0.3,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+        },
+        timeout=20.0,
+    )
+    response.raise_for_status()
+    return response.json()["choices"][0]["message"]["content"].strip()
 
 
 def explain(
@@ -240,8 +352,9 @@ def explain(
     — degrades to the deterministic fallback. The caller always gets prose.
     """
     settings = settings or get_settings()
+    provider = "anthropic" if client is not None else settings.active_ai_provider
 
-    if not settings.ai_enabled and client is None:
+    if provider == "none":
         return Explanation(
             text=fallback_explanation(justification),
             is_fallback=True,
@@ -249,32 +362,30 @@ def explain(
         )
 
     try:
-        if client is None:
-            from anthropic import Anthropic
+        user_prompt = build_user_prompt(justification)
 
-            client = Anthropic(api_key=settings.anthropic_api_key, timeout=20.0)
-
-        response = client.messages.create(
-            model=settings.kopa_ai_model,
-            max_tokens=400,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": build_user_prompt(justification)}],
-        )
-
-        text = "".join(
-            block.text for block in response.content if getattr(block, "type", None) == "text"
-        ).strip()
+        if provider == "groq":
+            text = _call_groq(settings, user_prompt)
+            model = settings.groq_model
+        else:
+            text = _call_anthropic(settings, user_prompt, client)
+            model = settings.kopa_ai_model
 
         ok, reason = _validate(text, justification)
         if not ok:
-            logger.warning("ai explanation rejected by validation: %s", reason)
+            logger.warning(
+                "ai explanation rejected by validation (%s/%s): %s",
+                provider,
+                model,
+                reason,
+            )
             return Explanation(
                 text=fallback_explanation(justification),
                 is_fallback=True,
                 failure_reason=f"validation_failed: {reason}",
             )
 
-        return Explanation(text=text, is_fallback=False, model=settings.kopa_ai_model)
+        return Explanation(text=text, is_fallback=False, model=model)
 
     except Exception as exc:  # noqa: BLE001 - the whole point is that nothing escapes
         logger.warning("ai explanation unavailable: %s: %s", type(exc).__name__, exc)

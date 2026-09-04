@@ -88,6 +88,20 @@ because nothing reads its opinion of the verdict.
 **4. Money is passed as exact decimal strings**, never floats, so the figure in
 the prompt is bit-for-bit the figure the engine computed.
 
+**5. Every number in the response is checked against the engine's output.**
+This is the load-bearing guard. `_find_invented_numbers()` extracts each
+numeric token from the model's prose and rejects the response if any of them
+does not trace back to the supplied facts. Thousands separators are normalised
+(`25,000` == `25000.00`), legitimately rounded presentations are permitted
+(`63.16%` may be written `63.2%` or `63%`), and date components are permitted
+because a due date of `2026-09-09` genuinely licenses "due on the 9th".
+
+A hallucinated balance is the one failure that would make KOPA dangerous rather
+than merely unhelpful, so it is checked rather than trusted. This matters most
+when narration runs on a smaller open model — instruction-following degrades
+before fluency does, so a model that *sounds* fine may still slip in a figure
+nobody computed.
+
 This is tested. `test_ai_copilot.py::test_model_contradicting_an_unsafe_verdict_is_rejected`
 feeds the layer a model response saying *"Go ahead, this is safe and there is
 no risk at all"* against an `unsafe` verdict, and asserts the user is shown the
@@ -106,6 +120,7 @@ exception path returns a deterministic fallback built from the same numbers.
 | Empty or truncated response | Fallback, reason `too short` |
 | Response contradicts the verdict | Fallback, reason `contradicts…` |
 | Guarantee language | Fallback, reason `inappropriate guarantee language` |
+| **A number the engine never produced** | **Fallback, reason `invented numbers…`** |
 
 The fallback is templated prose over the engine's figures — always correct,
 because it only restates computed values.
@@ -145,6 +160,25 @@ recommended"* — judgements, not assurances.
 **KOPA does not block.** "Send anyway" is always available. It is the user's
 money, and a tool that overrides its user is not a safety tool; it is a
 paternalistic one that people route around.
+
+## Choice of provider
+
+The narration layer is provider-pluggable, because swapping the model cannot
+change a verdict — only the wording under the numbers.
+
+| Provider | Model | Cost |
+|---|---|---|
+| Anthropic | `claude-sonnet-5` | Paid, ~$0.0022 per explanation, no free tier |
+| **Groq** | `openai/gpt-oss-120b` | **Free tier** — 30 req/min, 1,000 req/day, 200K tok/day |
+| none | — | Deterministic template |
+
+`KOPA_AI_PROVIDER=auto` uses whichever key is present, preferring Anthropic.
+
+That a weaker free model is a viable option is a *consequence* of the
+architecture, not a compromise of it. The model is handed finished arithmetic
+and asked to rephrase it; the numeric guard above then verifies it did not
+embellish. The safety of the system rests on the engine and the validator, not
+on the capability of the narrator.
 
 ## Privacy
 

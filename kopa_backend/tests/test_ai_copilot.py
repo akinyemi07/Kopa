@@ -189,6 +189,64 @@ def test_guarantee_language_is_rejected(safe_justification):
     assert "guarantee" in (result.failure_reason or "")
 
 
+def test_invented_number_is_rejected(unsafe_justification):
+    """The failure that would make KOPA dangerous rather than merely wrong.
+
+    Every figure in the response must trace back to the engine. A fluent,
+    confident, entirely wrong balance is exactly what a weaker narration model
+    produces, and exactly what must never reach a user.
+    """
+    client = FakeClient(
+        text="Sending this would leave you with NGN 41250.00, which should "
+             "still cover your rent comfortably this month."
+    )
+    result = explain(unsafe_justification, ai_settings(), client=client)
+    assert result.is_fallback is True
+    assert "invented numbers" in (result.failure_reason or "")
+    assert "41250" in (result.failure_reason or "")
+
+
+def test_engine_figures_are_accepted_verbatim(unsafe_justification):
+    client = FakeClient(
+        text="Sending NGN 20000.00 would leave you NGN 10000.00, and your rent "
+             "of NGN 25000.00 is due on 2026-09-09. Consider waiting."
+    )
+    result = explain(unsafe_justification, ai_settings(), client=client)
+    assert result.is_fallback is False, result.failure_reason
+
+
+def test_thousands_separators_do_not_trip_the_guard(unsafe_justification):
+    """25,000 and 25000.00 are the same figure and must compare equal."""
+    client = FakeClient(
+        text="This leaves NGN 10,000.00 against rent of NGN 25,000.00 that is "
+             "already due. We suggest reconsidering this transfer today."
+    )
+    result = explain(unsafe_justification, ai_settings(), client=client)
+    assert result.is_fallback is False, result.failure_reason
+
+
+def test_rounded_percentage_is_accepted(safe_justification):
+    """A legitimately rounded presentation of a computed figure is not invented."""
+    pct = safe_justification["pct_of_balance_used"]  # 1.0
+    assert pct == 1.0
+    client = FakeClient(
+        text=f"This uses about {pct}% of your balance, leaving "
+             f"NGN {safe_justification['resulting_balance']}. That looks fine."
+    )
+    result = explain(safe_justification, ai_settings(), client=client)
+    assert result.is_fallback is False, result.failure_reason
+
+
+def test_date_components_are_not_treated_as_invented(unsafe_justification):
+    """"due on the 9th" quotes a supplied date rather than inventing a number."""
+    client = FakeClient(
+        text="Your rent is due on the 9th and this transfer would not leave "
+             "enough to cover it. We suggest holding off for now."
+    )
+    result = explain(unsafe_justification, ai_settings(), client=client)
+    assert result.is_fallback is False, result.failure_reason
+
+
 def test_empty_response_is_rejected(safe_justification):
     result = explain(safe_justification, ai_settings(), client=FakeClient(text="   "))
     assert result.is_fallback is True

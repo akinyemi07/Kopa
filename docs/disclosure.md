@@ -22,12 +22,17 @@ written module was carried into this project.
 
 ## AI models
 
-| Model | Provider | Used for |
-|---|---|---|
-| `claude-sonnet-5` | Anthropic | Narrating the safety engine's output |
+KOPA's narration layer is provider-pluggable. Whichever is configured, its role
+is identical and strictly bounded — see [responsible-ai.md](responsible-ai.md).
 
-Accessed through the official `anthropic` Python SDK (v0.42.0) via the Messages
-API. Configured in `kopa_backend/app/services/ai_copilot.py`.
+| Model | Provider | Access | Used for |
+|---|---|---|---|
+| `claude-sonnet-5` | Anthropic | Official `anthropic` Python SDK (v0.42.0), Messages API | Narrating the safety engine's output |
+| `openai/gpt-oss-120b` | Groq (free tier) | OpenAI-compatible REST endpoint over httpx | Same |
+
+`openai/gpt-oss-120b` is an open-weights model served by Groq; it is not an
+OpenAI-operated service, and no OpenAI API is used. Selected via
+`KOPA_AI_PROVIDER`. Configured in `kopa_backend/app/services/ai_copilot.py`.
 
 **Scope of use in the product:** the model writes two to four sentences
 explaining figures that have already been computed. It performs no financial
