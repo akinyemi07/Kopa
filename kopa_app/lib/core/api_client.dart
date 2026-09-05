@@ -123,6 +123,42 @@ class KopaApi {
     return parsed;
   }
 
+  /// Like [_get], for endpoints returning a JSON array rather than an object
+  /// — `_decode` always expects a map, so list responses need their own path.
+  Future<List<dynamic>> _getList(String path) async {
+    late http.Response response;
+    try {
+      response = await _client.get(Uri.parse('$baseUrl$path')).timeout(_timeout);
+    } on TimeoutException {
+      throw ApiException('KOPA took too long to respond.');
+    } catch (_) {
+      throw ApiException('KOPA could not be reached.');
+    }
+
+    if (response.statusCode >= 400) {
+      Map<String, dynamic>? body;
+      try {
+        body = jsonDecode(response.body) as Map<String, dynamic>;
+      } catch (_) {
+        // fall through to the generic message below
+      }
+      final detail = body?['detail'];
+      throw ApiException(
+        detail is String ? detail : 'Something went wrong. Please try again.',
+        statusCode: response.statusCode,
+      );
+    }
+
+    try {
+      return jsonDecode(response.body) as List<dynamic>;
+    } catch (_) {
+      throw ApiException(
+        'KOPA returned an unexpected response.',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
   // ---------------------------------------------------------------- decisions
 
   /// Ask KOPA whether a transaction is safe — BEFORE anything is signed.
@@ -222,6 +258,14 @@ class KopaApi {
       'proposal_id': proposalId,
       'signature': signature,
     });
+  }
+
+  /// Transaction history, most recent first.
+  Future<List<TransactionRecord>> getTransactions(String userId) async {
+    final rows = await _getList('/transactions?user_id=$userId');
+    return rows
+        .map((r) => TransactionRecord.fromJson(r as Map<String, dynamic>))
+        .toList();
   }
 
   Future<Map<String, dynamic>> health() => _get('/health');

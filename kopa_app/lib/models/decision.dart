@@ -267,3 +267,50 @@ class Proposal {
         isDemo: json['is_demo'] as bool? ?? false,
       );
 }
+
+/// One entry in the transaction history.
+///
+/// `amount` arrives as a decimal string, like everywhere else money crosses
+/// the wire — kept that way rather than parsed to a double, so formatting it
+/// never risks drifting from the figure the backend actually recorded.
+@immutable
+class TransactionRecord {
+  const TransactionRecord({
+    required this.id,
+    required this.amount,
+    required this.currency,
+    required this.direction,
+    required this.status,
+    required this.occurredAt,
+    this.bmoniTxnRef,
+    this.counterpart,
+    this.description,
+  });
+
+  final String id;
+  final String? bmoniTxnRef;
+  final String amount;
+  final String currency;
+  final String direction;
+  final String? counterpart;
+  final String status;
+  final String? description;
+  final DateTime occurredAt;
+
+  /// True for a seeded demo entry — it carries no BMONI reference, which a
+  /// real settled transfer always would.
+  bool get isDemo => bmoniTxnRef == null && status == 'demo';
+
+  factory TransactionRecord.fromJson(Map<String, dynamic> json) =>
+      TransactionRecord(
+        id: json['id'] as String,
+        bmoniTxnRef: json['bmoni_txn_ref'] as String?,
+        amount: json['amount'] as String,
+        currency: json['currency'] as String? ?? 'NGN',
+        direction: json['direction'] as String,
+        counterpart: json['counterpart'] as String?,
+        status: json['status'] as String,
+        description: json['description'] as String?,
+        occurredAt: DateTime.parse(json['occurred_at'] as String),
+      );
+}

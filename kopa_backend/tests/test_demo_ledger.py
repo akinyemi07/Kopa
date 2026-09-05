@@ -99,3 +99,43 @@ def test_zero_or_negative_amount_is_rejected_before_it_reaches_the_ledger(client
     r = _send(client, 0, "Someone")
     assert r.status_code == 422  # schema validation: amount must be > 0
     assert demo_ledger.demo_spent() == 0
+
+
+# --------------------------------------------------------------------------
+# transaction history
+# --------------------------------------------------------------------------
+
+def test_history_is_empty_before_any_send(client):
+    r = client.get(f"/transactions?user_id={DEMO_USER_ID}")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_a_send_appears_in_history_immediately(client):
+    _send(client, 3000, "Mama Nkechi Stores")
+
+    rows = client.get(f"/transactions?user_id={DEMO_USER_ID}").json()
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["amount"] == "3000"
+    assert row["counterpart"] == "Mama Nkechi Stores"
+    assert row["direction"] == "outbound"
+    assert row["status"] == "demo"
+    # Never mistaken for a real BMONI transaction.
+    assert row["bmoni_txn_ref"] is None
+
+
+def test_history_is_most_recent_first(client):
+    _send(client, 1000, "First")
+    _send(client, 2000, "Second")
+
+    rows = client.get(f"/transactions?user_id={DEMO_USER_ID}").json()
+    assert [r["counterpart"] for r in rows] == ["Second", "First"]
+
+
+def test_a_rejected_overspend_does_not_appear_in_history(client):
+    balance = _balance(client)
+    _send(client, balance + 1, "QuickLoan NG")  # rejected, see test above
+
+    rows = client.get(f"/transactions?user_id={DEMO_USER_ID}").json()
+    assert rows == []

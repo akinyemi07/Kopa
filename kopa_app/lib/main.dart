@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 
 import 'core/api_client.dart';
 import 'models/decision.dart';
+import 'screens/history_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/pin_screen.dart';
 import 'screens/safety_result_screen.dart';
@@ -272,6 +273,17 @@ class _KopaShellState extends State<KopaShell> {
       onRefresh: _bootstrap,
       onSend: () => _startSend(isMerchant: false),
       onPayMerchant: () => _startSend(isMerchant: true),
+      onOpenHistory: _openHistory,
+    );
+  }
+
+  void _openHistory() {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => HistoryScreen(
+          fetch: () => _api.getTransactions(_demoUserId),
+        ),
+      ),
     );
   }
 }

@@ -113,7 +113,7 @@ def create_transaction(
         # The in-memory ledger is the one exception -- it exists purely so the
         # demo balance visibly drops on the next fetch, the way a real send
         # would.
-        demo_ledger.record_demo_send(payload.amount)
+        demo_ledger.record_demo_send(payload.amount, payload.counterpart)
         return ProposalResponse(
             proposal_id=f"demo-{uuid.uuid4()}",
             status="DEMO",
@@ -224,7 +224,32 @@ def submit_signature(
 def list_transactions(
     user_id: str, limit: int = 50, db: Session = Depends(get_db)
 ) -> list[TransactionResponse]:
-    """Transaction history from KOPA's own records."""
+    """Transaction history.
+
+    Demo mode reads the in-memory ledger — the same one the balance endpoint
+    and the solvency check already read from — so a send shows up here
+    immediately, with no database required. This mirrors the fix already
+    applied to POST /transactions: the old version queried the database
+    unconditionally and would 500 on this deployment, which has none.
+    """
+    settings = get_settings()
+
+    if settings.kopa_demo_mode:
+        return [
+            TransactionResponse(
+                id=r.id,
+                bmoni_txn_ref=None,
+                amount=r.amount,
+                currency="NGN",
+                direction=TransactionDirection.OUTBOUND.value,
+                counterpart=r.counterpart,
+                status=TransactionStatus.DEMO.value,
+                description=None,
+                occurred_at=r.occurred_at,
+            )
+            for r in demo_ledger.demo_sends()[: min(limit, 200)]
+        ]
+
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")

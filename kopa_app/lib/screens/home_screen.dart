@@ -21,6 +21,7 @@ class HomeScreen extends StatelessWidget {
     required this.onSend,
     required this.onPayMerchant,
     required this.onRefresh,
+    required this.onOpenHistory,
     this.isLoading = false,
     this.error,
   });
@@ -30,6 +31,7 @@ class HomeScreen extends StatelessWidget {
   final VoidCallback onSend;
   final VoidCallback onPayMerchant;
   final Future<void> Function() onRefresh;
+  final VoidCallback onOpenHistory;
   final bool isLoading;
   final String? error;
 
@@ -39,6 +41,11 @@ class HomeScreen extends StatelessWidget {
       appBar: AppBar(
         title: const KopaBrandMark(),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.receipt_long_outlined),
+            tooltip: 'Transaction history',
+            onPressed: onOpenHistory,
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh balance',
